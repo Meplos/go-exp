@@ -6,14 +6,41 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/rs/cors"
 )
 
+func backgroundHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseMultipartForm(100 << 20)
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		log.Printf("Error while parsing file : %v", err)
+		return
+	}
+	defer file.Close()
+	dst, serverError := os.Create("/tmp/background/" + header.Filename)
+	if serverError != nil {
+		log.Printf("Error while parsing file : %v", err)
+		return
+	}
+	io.Copy(dst, file)
+
+	result := analyze("/tmp/background/" + header.Filename)
+	w.Write([]byte(result))
+}
+
 func main() {
-	analyze("/home/meplos/Documents/sample/fox.jpg")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/background", backgroundHandler)
+	handler := cors.Default().Handler(mux)
+	log.Fatal(http.ListenAndServe(":9090", handler))
 }
 
 func openImage(filepath string) image.Image {
@@ -35,7 +62,7 @@ func openImage(filepath string) image.Image {
 	return img
 }
 
-func analyze(filepath string) {
+func analyze(filepath string) string {
 	start := time.Now()
 
 	img := openImage(filepath)
@@ -66,13 +93,15 @@ func analyze(filepath string) {
 	result := sum / 9
 
 	log.Printf("GRAY_LVL %v\n", result)
+	var bg string
 
 	if result < 65535/2 {
-		fmt.Printf("DARK\n")
+		bg = "#dadce0"
 	} else {
-		fmt.Printf("LIGHT\n")
+		bg = "#595858"
 	}
 
 	stop := time.Now()
 	fmt.Printf("time: %vms\n", stop.UnixMilli()-start.UnixMilli())
+	return bg
 }
