@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 	"log"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -41,26 +42,30 @@ func analyze(filepath string) {
 
 	tiles := crop.Divide(img.(*image.YCbCr), 3)
 
-	c := make(chan int, len(*tiles))
+	buff := make([]uint64, 9)
 	shouldClose := false
+	var wg sync.WaitGroup
+	wg.Add(9)
 	for idx, tile := range *tiles {
 		if idx == len(*tiles)-1 {
 			shouldClose = true
 		}
-		go func(tile crop.Tile, shouldClose bool) {
+		go func(tile crop.Tile, idx int, shouldClose bool) {
 			gray := tile.GetGrayLevel()
-			c <- int(gray)
-			if shouldClose {
-				close(c)
-			}
-		}(tile, shouldClose)
+			buff[idx] = gray
+			log.Printf("TILE[%v,%v] %v\n", tile.X, tile.Y, gray)
+			wg.Done()
+		}(tile, idx, shouldClose)
 	}
 
-	sum := 0
-	for i := 0; i < len(*tiles); i++ {
-		sum += <-c
+	var sum uint64 = 0
+	wg.Wait()
+	for _, value := range buff {
+		sum += value
 	}
-	result := sum / len(*tiles)
+	result := sum / 9
+
+	log.Printf("GRAY_LVL %v\n", result)
 
 	if result < 65535/2 {
 		fmt.Printf("DARK\n")
